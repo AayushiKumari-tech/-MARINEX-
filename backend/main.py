@@ -1,5 +1,6 @@
 from fastapi import FastAPI
 from app.mission.models import Mission
+from app.mission.validator import validate_mission
 
 app = FastAPI(
     title="MARINEX API",
@@ -21,9 +22,14 @@ def health():
     return {
         "status": "healthy"
     }
+
+
 @app.post("/mission")
 def create_mission(mission: Mission):
+    validation = validate_mission(mission)
+
     return {
         "message": "Mission received successfully",
+        "validation": validation,
         "mission": mission
     }
