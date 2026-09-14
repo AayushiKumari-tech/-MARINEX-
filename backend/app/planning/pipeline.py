@@ -1,3 +1,4 @@
+from ..evidence.trace import build_evidence_trace
 from ..mission.models import Mission
 from ..evidence.models import Evidence
 from ..evidence.scoring import calculate_risk_score
@@ -11,42 +12,53 @@ from .decision import build_decision
 
 def run_mission_pipeline(
     mission: Mission,
-    evidence: list[Evidence],
+    evidence_by_plan: dict[str, list[Evidence]],
     candidate_plans: list[CandidatePlan],
 ) -> dict:
     """
-    Run the complete MARINEX decision pipeline.
+    Run the MARINEX mission decision pipeline.
+
+    Each candidate plan receives its own marine evidence.
 
     Flow:
+
     Mission
         ↓
-    Evidence scoring
+    Plan-specific evidence
         ↓
-    Candidate plan evaluation
+    Risk + opportunity scoring
         ↓
-    Feasibility filtering
+    Feasibility evaluation
         ↓
     Ranking
         ↓
-    Final recommendation
+    Recommendation
     """
 
-    # --------------------------------------------------
-    # 1. Calculate evidence-based scores
-    # --------------------------------------------------
-
-    risk_score = calculate_risk_score(evidence)
-
-    opportunity_score = calculate_opportunity_score(evidence)
-
-    # --------------------------------------------------
-    # 2. Apply evidence scores to candidate plans
-    # --------------------------------------------------
-
     scored_plans = []
+    evaluations = []
+    plan_scores = []
+
+    # --------------------------------------------------
+    # 1. Score each candidate plan using its own evidence
+    # --------------------------------------------------
 
     for plan in candidate_plans:
 
+        plan_evidence = evidence_by_plan.get(
+            plan.plan_id,
+            []
+        )
+
+        risk_score = calculate_risk_score(
+            plan_evidence
+        )
+
+        opportunity_score = calculate_opportunity_score(
+            plan_evidence
+        )
+
+        # Update the plan with evidence-derived scores
         updated_plan = plan.model_copy(
             update={
                 "risk_score": risk_score,
@@ -56,11 +68,17 @@ def run_mission_pipeline(
 
         scored_plans.append(updated_plan)
 
-    # --------------------------------------------------
-    # 3. Evaluate feasibility
-    # --------------------------------------------------
+        plan_scores.append(
+            {
+                "plan_id": plan.plan_id,
+                "risk_score": risk_score,
+                "opportunity_score": opportunity_score,
+            }
+        )
 
-    evaluations = []
+    # --------------------------------------------------
+    # 2. Evaluate feasibility
+    # --------------------------------------------------
 
     feasible_plans = []
 
@@ -71,27 +89,31 @@ def run_mission_pipeline(
             plan
         )
 
-        evaluations.append(evaluation)
+        evaluations.append(
+            evaluation
+        )
 
         if evaluation["feasible"]:
-            feasible_plans.append(plan)
+            feasible_plans.append(
+                plan
+            )
 
     # --------------------------------------------------
-    # 4. Check whether any feasible plan exists
+    # 3. No feasible plan
     # --------------------------------------------------
 
     if not feasible_plans:
 
         return {
             "status": "no_feasible_plan",
-            "risk_score": risk_score,
-            "opportunity_score": opportunity_score,
+            "plan_scores": plan_scores,
             "evaluations": evaluations,
+            "ranked_plans": [],
             "recommendation": None,
         }
 
     # --------------------------------------------------
-    # 5. Rank feasible plans
+    # 4. Rank feasible plans
     # --------------------------------------------------
 
     ranked_plans = rank_plans(
@@ -99,7 +121,7 @@ def run_mission_pipeline(
     )
 
     # --------------------------------------------------
-    # 6. Select best plan
+    # 5. Select best plan
     # --------------------------------------------------
 
     best_plan_id = ranked_plans[0]["plan_id"]
@@ -119,7 +141,7 @@ def run_mission_pipeline(
     )
 
     # --------------------------------------------------
-    # 7. Build final decision explanation
+    # 6. Build explanation
     # --------------------------------------------------
 
     decision = build_decision(
@@ -127,22 +149,31 @@ def run_mission_pipeline(
         selected_score,
         selected_evaluation,
     )
+    evidence_trace = build_evidence_trace(
+        mission=mission,
+        selected_plan=selected_plan,
+        evidence=evidence_by_plan.get(
+            selected_plan.plan_id,
+            []
+        ),
+        feasibility=selected_evaluation,
+        ranking_score=selected_score,
+    )
 
     # --------------------------------------------------
-    # 8. Return complete MARINEX result
+    # 7. Final MARINEX response
     # --------------------------------------------------
 
     return {
         "status": "success",
 
-        "scores": {
-            "risk": risk_score,
-            "opportunity": opportunity_score,
-        },
+        "plan_scores": plan_scores,
 
         "evaluations": evaluations,
 
         "ranked_plans": ranked_plans,
 
         "recommendation": decision,
+
+        "evidence_trace": evidence_trace,
     }

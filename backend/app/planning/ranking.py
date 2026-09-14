@@ -1,30 +1,43 @@
 from .candidate_plans import CandidatePlan
 
 
-def calculate_plan_score(plan: CandidatePlan) -> float:
+def calculate_plan_score(
+    plan: CandidatePlan,
+) -> float:
     """
-    Calculate a ranking score for a feasible candidate plan.
+    Calculate a prototype ranking score.
 
     Higher opportunity is better.
     Lower risk is better.
     """
 
-    opportunity_component = plan.opportunity_score * 0.7
-    risk_component = (100 - plan.risk_score) * 0.3
+    opportunity_component = (
+        plan.opportunity_score * 0.7
+    )
 
-    score = opportunity_component + risk_component
+    risk_component = (
+        (100 - plan.risk_score) * 0.3
+    )
+
+    score = (
+        opportunity_component
+        + risk_component
+    )
 
     return round(score, 2)
 
 
-def rank_plans(plans: list[CandidatePlan]) -> list[dict]:
+def rank_plans(
+    plans: list[CandidatePlan],
+) -> list[dict]:
     """
-    Rank candidate plans from best to worst.
+    Rank feasible plans from best to worst.
     """
 
     ranked_plans = []
 
     for plan in plans:
+
         score = calculate_plan_score(plan)
 
         ranked_plans.append(
@@ -38,8 +51,12 @@ def rank_plans(plans: list[CandidatePlan]) -> list[dict]:
         )
 
     ranked_plans.sort(
-        key=lambda item: item["ranking_score"],
-        reverse=True
+        key=lambda item: (
+            item["ranking_score"],
+            item["opportunity_score"],
+            -item["risk_score"],
+        ),
+        reverse=True,
     )
 
     return ranked_plans
